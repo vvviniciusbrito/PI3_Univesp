@@ -87,3 +87,58 @@ async def consultar_pressao(paciente_id: int, inicio: str, fim: str):
         },
         "lista_medicoes": historico # Ideal para o colega montar o gráfico
     }
+
+@app.get("/consulta/{paciente_id}/todas")
+async def consultar_pressao_todas(paciente_id: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    query = """
+        SELECT sistolica, diastolica, data_hora FROM afericoes 
+        WHERE paciente_id = %s
+        ORDER BY data_hora ASC
+    """
+    cur.execute(query, (paciente_id,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        return {"mensagem": "Nenhum dado encontrado"}
+
+    sistolicas = [r[0] for r in rows]
+    diastolicas = [r[1] for r in rows]
+
+    historico = []
+    for r in rows:
+        historico.append({
+            "data": r[2].strftime("%Y-%m-%d %H:%M:%S"),
+            "sistolica": r[0],
+            "diastolica": r[1]
+        })
+
+    desvio_sis = stdev(sistolicas) if len(sistolicas) > 1 else 0.0
+    desvio_dia = stdev(diastolicas) if len(diastolicas) > 1 else 0.0
+    media_sis = mean(sistolicas)
+    media_dia = mean(diastolicas)
+
+    return {
+        "paciente_id": paciente_id,
+        "frequencia_leituras": len(rows),
+        "classificacao_geral": classificar_pressao(media_sis, media_dia),
+        "estatisticas": {
+            "sistolica": {
+                "media": round(media_sis, 2),
+                "desvio_padrao": round(desvio_sis, 2),
+                "maximo": max(sistolicas),
+                "minimo": min(sistolicas)
+            },
+            "diastolica": {
+                "media": round(media_dia, 2),
+                "desvio_padrao": round(desvio_dia, 2),
+                "maximo": max(diastolicas),
+                "minimo": min(diastolicas)
+            }
+        },
+        "lista_medicoes": historico
+    }
